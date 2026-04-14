@@ -7,6 +7,7 @@ import time
 import re
 import difflib
 import feedparser
+import streamlit as st
 
 # SSL 경고 숨김
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -16,7 +17,7 @@ SUPABASE_URL = "https://beaqnrzlnbqxltphfxrc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlYXFucnpsbmJxeGx0cGhmeHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwODA3MjgsImV4cCI6MjA5MDY1NjcyOH0.m41O66_yWUFFI_RdP07XxhbrCpnHR9AyNX3jrBkeZSQ"
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
-GEMINI_API_KEY = "AIzaSyD0WbRGY317Hq1wR479rmUa2vhDCc3XdHs"
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 def clean_url(url_str):
     if not url_str: return "#"
