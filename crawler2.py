@@ -5,19 +5,18 @@ import urllib.parse
 from datetime import date, datetime, timedelta
 import time
 import re
-import difflib
+import difflib  # 💡 문자열 유사도 검사 라이브러리
 import feedparser
-import streamlit as st
 
 # SSL 경고 숨김
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Supabase 설정
 SUPABASE_URL = "https://beaqnrzlnbqxltphfxrc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlYXFucnpsbmJxeGx0cGhmeHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwODA3MjgsImV4cCI6MjA5MDY1NjcyOH0.m41O66_yWUFFI_RdP07XxhbrCpnHR9AyNX3jrBkeZSQ"
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+GEMINI_API_KEY = "AIzaSyBVXU9iuezo_0aP_0loz0ltZgdayvML07U"
+WORKING_MODEL = None
 
 def clean_url(url_str):
     if not url_str: return "#"
@@ -27,62 +26,77 @@ def clean_url(url_str):
 def get_setting(id_num):
     try:
         res = requests.get(f"{SUPABASE_URL}/rest/v1/user_settings?id=eq.{id_num}", headers=HEADERS, verify=False, timeout=8)
-        if res.status_code == 200 and res.json():
-            return res.json()[0]['keywords']
+        if res.status_code == 200 and res.json(): return res.json()[0]['keywords']
     except: pass
     return []
 
-# 💡 핵심 수정: 중복 방지를 위해 기존 DB에서 요약본(summary)까지 가져옵니다.
 def get_existing_data():
     url = f"{SUPABASE_URL}/rest/v1/articles?select=source_url,title,summary&limit=1000"
     try:
         res = requests.get(url, headers=HEADERS, verify=False, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            urls = set(item['source_url'] for item in data)
-            titles = [item['title'] for item in data]
-            summaries = [item.get('summary', '') for item in data]
-            return urls, titles, summaries
+            return set(item['source_url'] for item in data), [item['title'] for item in data], [item.get('summary', '') for item in data]
     except: pass
     return set(), [], []
 
 def save_article(article):
     requests.post(f"{SUPABASE_URL}/rest/v1/articles", headers=HEADERS, json=article, verify=False)
 
-def extract_json_from_response(text):
-    text = text.strip()
-    json_match = re.search(r'\[.*\]', text, re.DOTALL)
-    if json_match: return json.loads(json_match.group(0))
-    raise ValueError("JSON 구조를 찾을 수 없습니다.")
-
-def get_best_gemini_url():
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
-    try:
-        res = requests.get(url, verify=False, timeout=10)
-        if res.status_code != 200:
-            return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-        models = res.json().get('models', [])
-        available_models = [m["name"] for m in models if "generateContent" in m.get("supportedGenerationMethods", []) and "gemini" in m.get("name", "")]
-        target_model = next((m for m in ["models/gemini-2.5-flash", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"] if m in available_models), available_models[0] if available_models else None)
-        if target_model: return f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={GEMINI_API_KEY}"
-        return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    except:
-        return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-
-def fetch_crossref_candidates(field, tech, detail):
-    three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-    query_terms = []
-    for w in field + tech + detail:
-        w_lower = w.lower()
-        if '축산' in w_lower: query_terms.append("livestock OR animal")
-        elif '식품' in w_lower: query_terms.append("food OR dietary")
-        elif '영양' in w_lower: query_terms.append("nutrition OR nutrient")
-        elif '스마트' in w_lower: query_terms.append("smart OR sensor OR automation")
-        else: query_terms.append(w)
+def call_gemini_with_retry(prompt_text):
+    global WORKING_MODEL
+    models_to_try = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
+    if WORKING_MODEL: models_to_try = [WORKING_MODEL]
         
-    query = " ".join(query_terms)
+    safety_settings = [{"category": f"HARM_CATEGORY_{cat}", "threshold": "BLOCK_NONE"} for cat in ["HARASSMENT", "HATE_SPEECH", "SEXUALLY_EXPLICIT", "DANGEROUS_CONTENT"]]
+    payload = {"contents": [{"parts": [{"text": prompt_text}]}], "safetySettings": safety_settings}
+
+    last_error_detail = ""
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            res = requests.post(url, json=payload, verify=False, timeout=90) 
+            if res.status_code == 200:
+                if not WORKING_MODEL:
+                    print(f"  -> ✅ [마스터 키 확인 완료] 쌩쌩한 최신 AI 모델({model}) 연결 성공!")
+                    WORKING_MODEL = model
+                return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                last_error_detail = f"상태코드 {res.status_code} | {res.text}"
+                print(f"  -> 🔍 [{model}] 접속 거부: {res.status_code}")
+        except Exception as e:
+            last_error_detail = str(e)
+            print(f"  -> 🔍 [{model}] 통신 에러: {e}")
+            
+    raise ValueError(f"모든 AI 모델 접속 실패. 에러 원인: {last_error_detail}")
+
+def translate_keywords_via_llm(field, tech, detail):
+    print("🤖 AI 조사관이 해외 검색을 위해 키워드를 학술 영문으로 번역 중입니다...")
+    f_str = ", ".join(field) if field else "연구"
+    t_str = ", ".join(tech) if tech else "기술"
+    d_str = ", ".join(detail) if detail else "동향"
+
+    prompt = f"""
+    Translate the following Korean research keywords into English academic search terms.
+    Keywords: Field: {f_str}, Tech: {t_str}, Details: {d_str}
+    Return ONLY a JSON object: {{"field_en": "...", "tech_en": "...", "detail_en": "..."}}
+    """
+    try:
+        raw_text = call_gemini_with_retry(prompt)
+        json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        translated = json.loads(json_match.group(0)) if json_match else json.loads(raw_text)
+        print(f"  -> 🔤 번역 성공: {translated}")
+        return translated
+    except Exception as e:
+        print("비상용 백업 키워드로 전환합니다.")
+        return {"field_en": "livestock", "tech_en": "AI", "detail_en": "odor"}
+
+def fetch_crossref_candidates(field_en, tech_en, detail_en):
+    print("⚙️ 1단계: 글로벌 학술망(Crossref)에서 최신 논문 스캔 중...")
+    three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    query = f"{field_en} {tech_en} {detail_en}"
     encoded_query = urllib.parse.quote(query)
-    url = f"https://api.crossref.org/works?query={encoded_query}&select=URL,title,publisher&filter=from-pub-date:{three_months_ago}&rows=30"
+    url = f"https://api.crossref.org/works?query={encoded_query}&rows=60&filter=from-pub-date:{three_months_ago}"
     
     try:
         res = requests.get(url, timeout=15, verify=False)
@@ -91,40 +105,33 @@ def fetch_crossref_candidates(field, tech, detail):
         for item in items:
             title = item.get("title", [""])[0]
             url = item.get("URL", "")
-            publisher = item.get("publisher", "Unknown")
-            if title and url: candidates[url] = {"title": f"[{publisher}] {title}", "url": url}
+            if title and url: candidates[url] = {"title": title, "url": url}
+        print(f"  -> {len(candidates)}개의 영문 논문 후보 스캔 완료.")
         return candidates
     except: return {}
 
-def evaluate_papers_with_llm(candidates, field, tech, detail, gemini_url):
+def evaluate_papers_with_llm(candidates, field, tech, detail):
     if not candidates: return []
+    print(f"🤖 2단계: AI 조사관이 최정예 논문 15개를 선별 중입니다... (최대 1분 정도 소요될 수 있습니다)")
     papers_text = ""
-    for url, data in candidates.items(): papers_text += f"- URL: {url} | Title: {data['title']}\n"
+    for url, data in candidates.items(): papers_text += f"- Title: {data['title']} (URL: {url})\n"
 
     prompt = f"""
-    You are a Universal Senior Research Peer-Reviewer.
-    [Research Focus] Domain: {field}, Technology: {tech}, Details: {detail}
-    [EVALUATION RULES] 1. CONTEXT IS KING. 2. REJECT (Score 0-6). 3. ACCEPT (Score 7-10).
-    Return ONLY a valid JSON array for papers scoring 7 or higher.
-    Format: [{{"url": "URL_HERE", "score": 9, "reason": "1문장 요약"}}]
-    Papers to evaluate:\n{papers_text}
+    Identify papers related to: Domain({field}), Tech({tech}), Detail({detail}).
+    Evaluate context. Return top relevant papers (Score 7-10) as JSON array.
+    Format: [{{"url": "...", "score": 10, "reason": "한글 요약"}}]
+    List:\n{papers_text}
     """
-    
-    safety_settings = [{"category": f"HARM_CATEGORY_{cat}", "threshold": "BLOCK_NONE"} for cat in ["HARASSMENT", "HATE_SPEECH", "SEXUALLY_EXPLICIT", "DANGEROUS_CONTENT"]]
-    
     try:
-        res = requests.post(gemini_url, json={"contents": [{"parts": [{"text": prompt}]}], "safetySettings": safety_settings}, verify=False, timeout=40)
-        res_data = res.json()
-        if "candidates" not in res_data: return []
-        raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-        return extract_json_from_response(raw_text)
-    except: return []
+        raw_text = call_gemini_with_retry(prompt)
+        json_match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+        return json.loads(json_match.group(0)) if json_match else []
+    except Exception as e: 
+        return []
 
-# 💡 핵심 수정: 70% 유사도 검증 로직 추가
-def crawl_google_news(query, category, existing_urls, existing_titles, existing_summaries, lang="ko"):
-    print(f"📰 [{category}] 맞춤형 뉴스 데이터 수집 중... (검색어: {query})")
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0'}
-    
+def crawl_google_news(query, category, existing_urls, existing_titles, lang="ko"):
+    print(f"📰 [{category}] 뉴스 수집 중... ({query})")
+    headers = {'User-Agent': 'Mozilla/5.0'}
     rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}+when:7d&hl={'ko&gl=KR&ceid=KR:ko' if lang=='ko' else 'en-US&gl=US&ceid=US:en'}"
 
     try:
@@ -132,105 +139,68 @@ def crawl_google_news(query, category, existing_urls, existing_titles, existing_
         feed = feedparser.parse(res.content)
         saved = 0
         today = str(date.today())
-
+        
         for entry in feed.entries:
             title = entry.title
             link = clean_url(entry.link)
-            summary_raw = re.sub('<[^<]+>', '', entry.summary) if 'summary' in entry else "상세 내용은 링크를 참조하세요."
-            summary = summary_raw[:100] + "..." if len(summary_raw) > 100 else summary_raw
-
+            
+            # [1차 방어] URL 완전 일치 검사
             if link in existing_urls: continue
-
-            # 🔥 70% 유사도 컷 로직: 제목이나 본문이 70% 이상 일치하면 버림
-            is_dup = False
-            for i in range(len(existing_titles)):
-                if difflib.SequenceMatcher(None, title, existing_titles[i]).ratio() >= 0.7 or \
-                   difflib.SequenceMatcher(None, summary, existing_summaries[i]).ratio() >= 0.7:
-                    is_dup = True
+            
+            # 💡 [2차 방어] 제목 유사도 검사 (60% 이상 일치하면 복붙 기사로 간주하고 버림)
+            is_duplicate = False
+            for ex_title in existing_titles:
+                similarity = difflib.SequenceMatcher(None, title, ex_title).ratio()
+                if similarity > 0.6:
+                    is_duplicate = True
                     break
+            if is_duplicate: continue
             
-            if is_dup: continue
-
-            save_article({
-                "title": title, "summary": summary, "content": "최신 기사 요약본입니다. 원문 보러가기를 클릭하세요.",
-                "source_url": link, "publish_date": today, "category": category
-            })
+            # 방어막을 뚫은 진짜 새로운 기사만 저장
+            save_article({"title": title, "summary": title[:100], "source_url": link, "publish_date": today, "category": category})
             existing_urls.add(link)
-            existing_titles.append(title)
-            existing_summaries.append(summary)
+            existing_titles.append(title) # 다음 기사 검사를 위해 기억 장부에 추가
             saved += 1
-            print(f"  -> 💾 [뉴스 저장] {title[:35]}...")
-            
-            if saved >= 3: break # 3개 채우면 종료
-            
+            if saved >= 10: break
         return saved
-    except Exception as e:
-        print(f"⚠️ 뉴스 수집 에러: {e}")
-        return 0
+    except: return 0
 
 def run_ultimate_crawler():
-    print("🚀 [마스터 아키텍처: 글로벌 70% 중복 컷 동적 크롤러 가동]")
-    field = get_setting(2) or ["연구"]
-    tech = get_setting(3) or ["기술"]
-    detail = get_setting(1) or ["동향"]
+    field = get_setting(2) or ["축산"]
+    tech = get_setting(3) or ["인공지능"]
+    detail = get_setting(1) or ["냄새"]
     
-    main_field = field[0] if field else "연구"
-    main_tech = tech[0] if tech else "기술"
-    main_detail = detail[0] if detail else "동향"
-    
-    gemini_dynamic_url = get_best_gemini_url()
-    existing_urls, existing_titles, existing_summaries = get_existing_data()
+    print(f"🚀 [조사 시작] 분야: {field} | 기술: {tech}")
+    existing_urls, existing_titles, _ = get_existing_data()
     today = str(date.today())
     
-    candidates = fetch_crossref_candidates(field, tech, detail)
-    approved_papers = evaluate_papers_with_llm(candidates, field, tech, detail, gemini_dynamic_url)
+    en_terms = translate_keywords_via_llm(field, tech, detail)
+    candidates = fetch_crossref_candidates(en_terms['field_en'], en_terms['tech_en'], en_terms['detail_en'])
+    approved_papers = evaluate_papers_with_llm(candidates, field, tech, detail)
     
-    saved_paper_count = 0
-    for p in sorted(approved_papers, key=lambda x: x['score'], reverse=True):
+    saved_count = 0
+    for p in sorted(approved_papers, key=lambda x: x.get('score', 0), reverse=True):
         url = p.get('url')
-        if not url or url not in candidates: continue
-            
-        title = candidates[url]['title']
-        clean_url_str = clean_url(url)
+        if not url or clean_url(url) in existing_urls: continue
+        title = candidates.get(url, {}).get('title', 'Unknown Paper')
         
-        if clean_url_str in existing_urls: continue
-            
-        # 논문 제목도 70% 유사도 검사
-        is_dup = False
-        for ext_title in existing_titles:
-            if difflib.SequenceMatcher(None, title, ext_title).ratio() >= 0.7:
-                is_dup = True
-                break
-        if is_dup: continue
-            
-        cat = f"[{main_field} 연구]"
         save_article({
-            "title": f"{cat} {title}", 
-            "summary": f"⭐ [최신연구 AI 심사 {p.get('score', 0)}점] {p.get('reason', '')}",
-            "content": "AI 트렌드 분석 논문입니다.", "source_url": clean_url_str, "publish_date": today, "category": "최신연구"
+            "title": f"[{field[0]} 연구] {title}", 
+            "summary": f"⭐ [AI 리포트] {p.get('reason')}",
+            "source_url": clean_url(url), "publish_date": today, "category": "최신연구"
         })
-        print(f"  -> 🎯 [합격] 논문 저장: {title[:35]}...")
-        existing_urls.add(clean_url_str)
-        existing_titles.append(f"{cat} {title}")
-        existing_summaries.append("")
-        saved_paper_count += 1
-        if saved_paper_count >= 5: break
+        saved_count += 1
+        print(f"  -> 🎯 논문 저장: {title[:35]}...")
+        if saved_count >= 15: break
         
     print("-" * 50)
-    q_policy = f"{main_field} {main_tech} 동향 OR 정책"
-    q_tech = f"{main_tech} {main_detail} 신기술 OR 산업"
+    q_ko = f'"{field[0]}" {tech[0]} {detail[0]}'
+    q_en = f'"{en_terms["field_en"]}" {en_terms["tech_en"]}'
     
-    # 💡 핵심 수정: 미국 서버(en)에 보낼 때는 한글을 강제로 영어로 치환
-    en_field = "livestock OR animal" if "축산" in main_field else ("food OR diet" if "식품" in main_field else "industry")
-    en_tech = "smart OR sensor" if "스마트" in main_tech else ("AI" if "인공지능" in main_tech else "technology")
-    q_global = f"{en_tech} {en_field} trend OR news"
-    
-    crawl_google_news(q_policy, "국내동향", existing_urls, existing_titles, existing_summaries, "ko")
-    crawl_google_news(q_tech, "기술소식", existing_urls, existing_titles, existing_summaries, "ko")
-    crawl_google_news(q_global, "해외트렌드", existing_urls, existing_titles, existing_summaries, "en")
-    print("-" * 50)
-    
-    print("✅ 중복 컷 및 글로벌 언어 치환 크롤링 완벽 종료!")
+    crawl_google_news(q_ko, "국내동향", existing_urls, existing_titles, "ko")
+    crawl_google_news(q_ko, "기술소식", existing_urls, existing_titles, "ko")
+    crawl_google_news(q_en, "해외트렌드", existing_urls, existing_titles, "en")
+    print(f"✅ 조사 완료 (논문 {saved_count}건 수집)")
 
 if __name__ == "__main__":
     run_ultimate_crawler()
