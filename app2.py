@@ -13,104 +13,43 @@ SUPABASE_URL = "https://beaqnrzlnbqxltphfxrc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlYXFucnpsbmJxeGx0cGhmeHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwODA3MjgsImV4cCI6MjA5MDY1NjcyOH0.m41O66_yWUFFI_RdP07XxhbrCpnHR9AyNX3jrBkeZSQ"
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
-st.set_page_config(page_title="NIAS Intelligence Report", layout="wide", page_icon="🏢")
+st.set_page_config(page_title="NIAS AI Investigator", layout="wide", page_icon="🕵️‍♂️")
+
+if 'page_view' not in st.session_state:
+    st.session_state.page_view = "main"
+if 'saved_papers' not in st.session_state:
+    st.session_state.saved_papers = {}
+if 'saved_news' not in st.session_state:
+    st.session_state.saved_news = {}
 
 st.markdown("""
     <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    
-    [data-testid="stSidebar"] .block-container { padding-top: 2.5rem !important; }
-    .block-container { padding-top: 3rem !important; padding-bottom: 1rem !important; }
     html, body, [class*="css"] { font-family: 'Pretendard', sans-serif !important; }
+    
+    [data-testid="stSidebar"] .block-container { padding-top: 3.5rem !important; }
+    .block-container { padding-top: 3.5rem !important; padding-bottom: 1rem !important; }
 
-    .vertical-title-container {
-        writing-mode: vertical-rl;
-        text-orientation: upright;
-        padding-right: 5px;
-        margin-right: 0px;
-        height: 100%;
-        min-height: 500px;
-        padding-top: 0px;
-        text-align: left;
-    }
-    .t-black { font-size: 1.45rem; font-weight: 800; color: #111; letter-spacing: 0.05rem; display: inline-block; margin-top: 0; }
-    .t-blue { font-size: 1.45rem; font-weight: 600; color: #1a73e8; letter-spacing: 0.05rem; display: inline-block; }
-    .gap-small { margin-top: 4px; } 
+    .main-header { font-size: 1.8rem; font-weight: 800; color: #111; margin-bottom: 0.2rem; }
+    .sub-header { font-size: 1.1rem; font-weight: 600; color: #1a73e8; margin-bottom: 0rem; }
+    
+    div[data-testid="stTabs"] { margin-top: -45px; }
+    div[data-testid="stHorizontalBlock"] { position: relative; z-index: 10; }
 
-    .summary-box { background: #ffffff; border: 1px solid #eef0f2; border-radius: 12px; padding: 20px; margin-bottom: 15px; min-height: 140px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); transition: all 0.2s ease; }
-    .summary-box:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.08); transform: translateY(-3px); border-color: #d2d6da; }
-    
-    a.news-link { text-decoration: none !important; border-bottom: none !important; display: block; }
-    .news-title { font-size: 1.15rem; font-weight: 700; color: #222; margin-bottom: 4px !important; line-height: 1.4; word-break: keep-all; transition: color 0.2s; text-decoration: none !important; border-bottom: none !important; }
-    a.news-link:hover .news-title { color: #1a73e8 !important; text-decoration: none !important; border-bottom: none !important; }
-    .news-summary { font-size: 0.95rem; font-weight: 400; color: #555; line-height: 1.5; word-break: keep-all; }
-    
-    .tag { font-size: 0.85rem; font-weight: 700; color: white; background: #1a73e8; padding: 6px 14px; border-radius: 6px; display: inline-block; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(26,115,232,0.3); }
-    .issue-info { margin-bottom: 5px; font-size: 0.95rem; color: #777; font-weight: 500; }
-    .catchphrase { margin-bottom: 25px; font-size: 0.95rem; color: #1a73e8; font-weight: 600; letter-spacing: -0.02em; }
-    
-    .weather-btn { background-color: #f4f8ff; padding: 12px 10px; border-radius: 8px; text-align: center; margin-top: 10px; border: 1px solid #e0ebff; cursor: pointer; transition: all 0.2s; text-decoration: none !important; border-bottom: none !important; display: block; }
-    .weather-btn:hover { background-color: #e0ebff; transform: translateY(-2px); text-decoration: none !important; border-bottom: none !important; }
-    
-    .stButton>button { font-weight: 600 !important; }
-    
-    a.archive-link { text-decoration: none !important; border-bottom: none !important; }
-    a.archive-link:hover { color: #1a73e8 !important; text-decoration: none !important; border-bottom: none !important; }
-    
-    div[data-testid="stPopover"] button {
-        min-height: 26px !important;
-        height: 26px !important;
-        padding: 0px 10px !important;
-        margin-top: 6px !important; 
-        border-radius: 6px !important;
-        border: 1px solid #dce8fa !important;
-        background-color: #f8fbff !important;
-        width: fit-content !important;
-    }
-    div[data-testid="stPopover"] button p {
-        font-size: 0.8rem !important;
-        font-weight: 700 !important;
-        color: #1a73e8 !important;
-        line-height: 24px !important;
-        white-space: nowrap !important; 
-    }
-    div[data-testid="stPopover"] button:hover {
-        background-color: #e0ebff !important;
-        border-color: #1a73e8 !important;
-    }
-    
-    div[data-testid="stPopoverBody"] {
-        padding: 15px !important;
-        border-radius: 10px !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
-        min-width: 320px !important; 
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { height: 45px; background-color: #f8f9fa; border-radius: 8px 8px 0 0; padding-top: 8px; padding-bottom: 8px; font-weight: 700; }
+    .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #1a73e8 !important; }
 
-    div[data-testid="stVerticalBlock"]:has(> div.element-container:nth-child(1) .research-base-camp) {
-        background-color: #f4f8ff !important;
-        border: 1px solid #dce8fa !important;
-        border-left: 5px solid #1a73e8 !important;
-        border-radius: 12px !important;
-        padding: 15px 25px 15px 25px !important; 
-        margin-bottom: 25px !important;
-    }
-
-    div[data-testid="stVerticalBlock"]:has(> div.element-container:nth-child(1) .main-card-target) p {
-        margin-bottom: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.element-container:nth-child(1) .main-card-target) {
-        background-color: #ffffff !important;
-        border: 1px solid #eef0f2 !important;
-        border-radius: 10px !important;
-        padding: 18px 20px !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
-        margin-bottom: 12px !important;
-    }
-
-    div[data-testid="stVerticalBlock"]:has(> div.element-container:nth-child(1) .main-card-target) div[data-testid="stHorizontalBlock"] {
-        align-items: center !important;
-    }
+    a.paper-link { text-decoration: none !important; display: block; }
+    
+    .paper-box, .news-box { background: #ffffff; border: 1px solid #eef0f2; border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: all 0.2s ease; margin-bottom: 0px; }
+    .paper-box:hover, .news-box:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d2d6da; }
+    .paper-title, .news-title-text { font-size: 1.1rem; font-weight: 700; color: #222; margin-bottom: 6px; line-height: 1.4; transition: color 0.2s ease; }
+    a.paper-link:hover .paper-title, a.paper-link:hover .news-title-text { color: #1a73e8; text-decoration: underline; }
+    .paper-summary { font-size: 0.95rem; color: #555; line-height: 1.5; word-break: keep-all; }
+    
+    .section-title { font-size: 1.1rem; font-weight: 800; color: #222; margin-bottom: 15px; padding-left: 5px; border-left: 4px solid #1a73e8; }
+    .stButton>button { border-radius: 8px; font-weight: 600; width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -119,23 +58,9 @@ def clean_url(url_str):
     match = re.search(r'(https?://[^\s)\]\'\"]+)', url_str)
     return match.group(1) if match else url_str
 
-def get_unique_items(target_list, reference_list, threshold=0.60):
-    ref_titles = [item['title'] for item in reference_list]
-    unique_list = []
-    for item in target_list:
-        is_dup = False
-        for ref_title in ref_titles:
-            if difflib.SequenceMatcher(None, item['title'], ref_title).ratio() >= threshold:
-                is_dup = True
-                break
-        if not is_dup:
-            unique_list.append(item)
-            ref_titles.append(item['title'])
-    return unique_list
-
 def fetch_all_data():
     try:
-        res = requests.get(f"{SUPABASE_URL}/rest/v1/articles?order=publish_date.desc,created_at.desc&limit=500", headers=HEADERS, verify=False, timeout=8)
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/articles?order=created_at.desc&limit=200", headers=HEADERS, verify=False, timeout=8)
         return res.json() if res.status_code == 200 else []
     except: return []
 
@@ -150,35 +75,14 @@ def update_setting(id_num, kw_list):
         requests.post(f"{SUPABASE_URL}/rest/v1/user_settings", headers={**HEADERS, "Prefer": "resolution=merge-duplicates"}, json={"id": id_num, "keywords": kw_list}, verify=False, timeout=8)
     except: pass
 
-@st.dialog("📝 AI 심층 분석 리포트")
-def show_details(article):
-    st.subheader(article['title'])
-    st.divider()
-    st.info(article.get('content', article['summary']))
-    st.link_button("🌐 논문 원문(Source) 보러가기", clean_url(article.get('source_url', '')), use_container_width=True)
-
 with st.sidebar:
-    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-    if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-    else: st.title("NIAS Report")
-    
-    st.markdown("""
-        <a href="https://weather.naver.com/today/14110000" target="_blank" class="weather-btn">
-            <div style="font-size: 0.8rem; color: #555; margin-bottom: 4px; font-weight: 600;">📍 전북 전주·완주 기상 상황</div>
-            <div style="font-size: 1.05rem; font-weight: 700; color: #1a73e8;">🌤️ 실시간 날씨 확인하기 👆</div>
-        </a>
-        <div style='margin-bottom: 15px;'></div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<hr style='margin: 15px 0px;'>", unsafe_allow_html=True)
-    selected_date = st.date_input("📅 리포트 날짜 조회", value=date.today())
-    
-    if st.button("🔄 맞춤형 AI 취재 및 심사 시작", use_container_width=True):
-        with st.spinner("🤖 최근 3개월 연구 동향 및 맞춤 뉴스 수집 중..."):
+    st.title("🕵️‍♂️ AI Investigator")
+    if st.button("🚀 AI 조사관 파견", use_container_width=True):
+        with st.spinner("🕵️‍♂️ AI 조사관이 전 세계 학술망과 뉴스를 탐색 중입니다..."):
             try:
                 from crawler2 import run_ultimate_crawler
                 run_ultimate_crawler()
-                st.success("✨ 업데이트 완료!")
+                st.success("✨ 조사가 완료되었습니다!")
                 time.sleep(1)
                 st.rerun()
             except Exception as e:
@@ -186,149 +90,159 @@ with st.sidebar:
 
     st.markdown("<hr style='margin: 15px 0px;'>", unsafe_allow_html=True)
     
-    st.subheader("🔭 1단계: 연구 분야 (필수)")
+    # 💡 박사님의 원래 명칭으로 완벽하게 복구했습니다.
+    st.subheader("🔭 연구 분야")
     f_val = get_setting(2, ["축산"])
     new_f = st.text_area("Field", value=", ".join(f_val), height=60, label_visibility="collapsed")
     
-    st.subheader("💡 2단계: 관심 기술 (가중치)")
-    t_val = get_setting(3, ["스마트", "AI", "ICT", "모니터링"])
+    st.subheader("💡 관심 기술")
+    t_val = get_setting(3, ["인공지능", "ICT", "모니터링"])
     new_t = st.text_area("Tech", value=", ".join(t_val), height=60, label_visibility="collapsed")
     
-    st.subheader("🎯 3단계: 상세 키워드 (가중치)")
-    k_val = get_setting(1, ["분뇨", "환경", "온실가스"])
+    st.subheader("🎯 상세 키워드")
+    k_val = get_setting(1, ["냄새"])
     new_k = st.text_area("Keywords", value=", ".join(k_val), height=60, label_visibility="collapsed")
     
-    if st.button("✅ 모든 설정 저장 및 반영", use_container_width=True):
+    # 💡 버튼 이름도 통일감 있게 맞췄습니다.
+    if st.button("✅ 연구 지침 업데이트", use_container_width=True):
         update_setting(2, [x.strip() for x in new_f.split(",") if x.strip()])
         update_setting(3, [x.strip() for x in new_t.split(",") if x.strip()])
         update_setting(1, [x.strip() for x in new_k.split(",") if x.strip()])
-        st.success("설정 완료!")
+        st.success("지침이 저장되었습니다!")
         st.rerun()
 
-col_title, col_content = st.columns([1, 14])
-
-# 💡 동적 UI: 사이드바에서 입력한 키워드를 메인 화면 제목에 반영
+all_data = fetch_all_data()
 main_f = f_val[0] if f_val else "연구"
 main_t = t_val[0] if t_val else "기술"
 
-with col_title:
-    st.markdown(f'<div class="vertical-title-container"><span class="t-black">농촌진흥청</span><span class="t-blue gap-small">AI연구트렌드리포트</span></div>', unsafe_allow_html=True)
+if st.session_state.page_view == "main":
+    st.markdown('<div class="main-header">농촌진흥청 AI 연구 트렌드 조사관</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-header">AI 조사관이 [{main_f}] 분야의 최근 논문과 [{main_t}] 트렌드를 집중 조사합니다.</div>', unsafe_allow_html=True)
 
-with col_content:
-    st.markdown(f'<div class="issue-info">발행일: {selected_date} | AI Intelligence Daily</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="catchphrase">"[{main_f}] 분야의 최근 3개월 연구와 [{main_t}] 트렌드를 AI가 큐레이션합니다."</div>', unsafe_allow_html=True)
-    
-    all_data = fetch_all_data()
-    target_data = [a for a in all_data if a['publish_date'] == str(selected_date)]
+    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+    col_spacer, col_btn1, col_btn2 = st.columns([7.4, 1.3, 1.3], gap="small")
+    with col_btn1:
+        if st.button("📂 논문 보관함", type="primary", use_container_width=True):
+            st.session_state.page_view = "paper_archive"
+            st.rerun()
+    with col_btn2:
+        if st.button("📂 뉴스 보관함", type="primary", use_container_width=True):
+            st.session_state.page_view = "news_archive"
+            st.rerun()
 
-    if not all_data:
-        st.info("📭 수집된 데이터가 없습니다. 좌측의 [🔄 취재 시작] 버튼을 눌러주세요.")
+    tab_paper, tab_news = st.tabs(["📄 학술 논문", "📰 보도 자료"])
+
+    with tab_paper:
+        research_papers = [a for a in all_data if a.get('category') == "최신연구"]
+        if not research_papers:
+            st.info("🕵️‍♂️ 수집된 논문 자료가 없습니다. 왼쪽의 'AI 조사관 파견' 버튼을 클릭해 주세요.")
+        else:
+            for i, paper in enumerate(research_papers[:15]):
+                clean_title = re.sub(r'\[.*?연구\]', '', paper["title"]).strip()
+                url = clean_url(paper.get('source_url', ''))
+                
+                col_content, col_btn = st.columns([8.8, 1.2], vertical_alignment="center")
+                with col_content:
+                    st.markdown(f'<div class="paper-box"><a href="{url}" target="_blank" class="paper-link"><div class="paper-title">{clean_title}</div></a><div class="paper-summary">{paper.get("summary", "")}</div></div>', unsafe_allow_html=True)
+                with col_btn:
+                    if url in st.session_state.saved_papers: st.button("✅ 보관완료", key=f"main_p_saved_{i}", disabled=True)
+                    else:
+                        if st.button("🔖 보관하기", key=f"main_p_save_{i}"):
+                            st.session_state.saved_papers[url] = paper
+                            st.rerun()
+                st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+    with tab_news:
+        policy_news = [a for a in all_data if a.get('category') == "국내동향"]
+        tech_news = [a for a in all_data if a.get('category') == "기술소식"]
+        global_news = [a for a in all_data if a.get('category') == "해외트렌드"]
+        
+        col1, col2, col3 = st.columns(3)
+        
+        def render_news_column(news_list, col_obj, section_title, key_prefix):
+            with col_obj:
+                st.markdown(f'<div class="section-title">{section_title}</div>', unsafe_allow_html=True)
+                for i, news in enumerate(news_list[:15]):
+                    url = clean_url(news.get('source_url', ''))
+                    sub_col_content, sub_col_btn = st.columns([7.5, 2.5], vertical_alignment="center")
+                    with sub_col_content:
+                        st.markdown(f'<div class="news-box"><a href="{url}" target="_blank" class="paper-link"><div class="news-title-text">{news["title"]}</div></a></div>', unsafe_allow_html=True)
+                    with sub_col_btn:
+                        if url in st.session_state.saved_news: st.button("✅ 완료", key=f"{key_prefix}_saved_{i}", disabled=True)
+                        else:
+                            if st.button("🔖 보관", key=f"{key_prefix}_save_{i}"):
+                                st.session_state.saved_news[url] = news
+                                st.rerun()
+                    st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+        render_news_column(policy_news, col1, "📢 국내 정책 및 동향", "pol")
+        render_news_column(tech_news, col2, "📡 축산 인공지능 소식", "tech")
+        render_news_column(global_news, col3, "🌎 글로벌 트렌드", "glob")
+
+elif st.session_state.page_view == "paper_archive":
+    col_header, col_btn = st.columns([8, 2])
+    with col_header:
+        st.markdown('<div class="main-header">📂 논문자료 보관함</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-header">내가 스크랩한 핵심 연구 논문 리스트입니다.</div>', unsafe_allow_html=True)
+    with col_btn:
+        st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+        if st.button("◀ 대시보드로 돌아가기", use_container_width=True):
+            st.session_state.page_view = "main"
+            st.rerun()
+    st.divider()
+
+    saved_papers = list(st.session_state.saved_papers.values())
+    if not saved_papers:
+        st.info("비어 있습니다. 대시보드에서 유용한 논문을 보관함에 저장해 보세요.")
     else:
-        research_news = [a for a in target_data if a.get('category') == "최신연구"]
-        all_research = [a for a in all_data if a.get('category') == "최신연구"]
+        for i, paper in enumerate(saved_papers):
+            clean_title = re.sub(r'\[.*?연구\]', '', paper["title"]).strip()
+            url = clean_url(paper.get('source_url', ''))
+            col_content, col_btn = st.columns([8.8, 1.2], vertical_alignment="center")
+            with col_content:
+                st.markdown(f'<div class="paper-box"><a href="{url}" target="_blank" class="paper-link"><div class="paper-title">{clean_title}</div></a><div class="paper-summary">{paper.get("summary", "")}</div></div>', unsafe_allow_html=True)
+            with col_btn:
+                if st.button("🗑️ 삭제하기", key=f"del_p_{i}"):
+                    del st.session_state.saved_papers[url]
+                    st.rerun()
+            st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+elif st.session_state.page_view == "news_archive":
+    col_header, col_btn = st.columns([8, 2])
+    with col_header:
+        st.markdown('<div class="main-header">📂 보도자료 보관함</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-header">스크랩한 주요 동향 및 기술 뉴스를 섹션별로 확인하세요.</div>', unsafe_allow_html=True)
+    with col_btn:
+        st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+        if st.button("◀ 대시보드로 돌아가기", use_container_width=True):
+            st.session_state.page_view = "main"
+            st.rerun()
+    st.divider()
+
+    saved_news_list = list(st.session_state.saved_news.values())
+    if not saved_news_list:
+        st.info("비어 있습니다. 대시보드에서 중요한 뉴스를 보관함에 저장해 보세요.")
+    else:
+        archived_policy = [n for n in saved_news_list if n.get('category') == "국내동향"]
+        archived_tech = [n for n in saved_news_list if n.get('category') == "기술소식"]
+        archived_global = [n for n in saved_news_list if n.get('category') == "해외트렌드"]
         
-        with st.container():
-            st.markdown('<div class="research-base-camp"></div>', unsafe_allow_html=True)
-            st.markdown('<div class="tag" style="margin-bottom: 15px;">오늘의 AI 심사 통과 연구 자료 (최근 3개월)</div>', unsafe_allow_html=True)
-            
-            if not research_news:
-                st.info("📭 해당 날짜의 논문 데이터가 없습니다.")
-            else:
-                top_papers = research_news[:2]
-                leftover_today = research_news[2:]
+        col1, col2, col3 = st.columns(3)
+        def render_archived_news(news_list, col_obj, section_title, key_prefix):
+            with col_obj:
+                st.markdown(f'<div class="section-title">{section_title}</div>', unsafe_allow_html=True)
+                if not news_list: st.caption("저장된 자료가 없습니다.")
+                for i, news in enumerate(news_list):
+                    url = clean_url(news.get('source_url', ''))
+                    sub_col_content, sub_col_btn = st.columns([7.5, 2.5], vertical_alignment="center")
+                    with sub_col_content:
+                        st.markdown(f'<div class="news-box"><a href="{url}" target="_blank" class="paper-link"><div class="news-title-text">{news["title"]}</div></a></div>', unsafe_allow_html=True)
+                    with sub_col_btn:
+                        if st.button("🗑️ 삭제", key=f"del_{key_prefix}_{i}"):
+                            del st.session_state.saved_news[url]
+                            st.rerun()
+                    st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
-                for i, top in enumerate(top_papers):
-                    clean_title = top["title"]
-                    clean_title = re.sub(r'\[.*?연구\]', '', clean_title).strip()
-
-                    with st.container():
-                        st.markdown('<div class="main-card-target"></div>', unsafe_allow_html=True)
-                        c_txt, c_btn = st.columns([8.2, 1.8]) 
-                        with c_txt:
-                            st.markdown(f'<div class="news-title">{clean_title}</div><div class="news-summary" style="font-size:0.95rem; color:#555;">{top["summary"]}</div>', unsafe_allow_html=True)
-                        with c_btn:
-                            if st.button("🔍 리포트 보기", key=f"main_btn_{i}", use_container_width=True): show_details(top)
-                
-                leftovers_raw = leftover_today + [a for a in all_research if a not in research_news]
-                leftovers = get_unique_items(leftovers_raw, top_papers, threshold=0.60)
-                
-                if len(leftovers) > 0:
-                    pop_col1, pop_col2, _ = st.columns([1.6, 1.5, 6.9], gap="small") 
-                    with pop_col1:
-                        with st.popover(f"➕ 추가 연구 리스트 ({min(len(leftovers), 3)}건)"):
-                            st.markdown("<div style='font-weight:700; margin-bottom:12px; color:#1a73e8;'>오늘의 추가 연구 논문</div>", unsafe_allow_html=True)
-                            for i, extra in enumerate(leftovers[:3]):
-                                e_title = re.sub(r'\[.*?연구\]', '', extra["title"]).strip()
-                                c_left, c_right = st.columns([7.5, 2.5])
-                                with c_left: 
-                                    st.markdown(f'<div class="sub-research-card" style="padding: 12px; margin-bottom: 8px;"><div style="font-size: 0.95rem; font-weight: 600; color: #222; margin-bottom: 4px; line-height: 1.3;">{e_title}</div><div style="font-size: 0.85rem; color: #666; line-height: 1.3;">{extra["summary"][:60]}...</div></div>', unsafe_allow_html=True)
-                                with c_right:
-                                    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-                                    if st.button("🔍 보기", key=f"extra_btn_{i}", use_container_width=True): show_details(extra)
-                    with pop_col2:
-                        if len(leftovers) > 3:
-                            with st.popover("📂 연구자료 저장소 (이전)"):
-                                st.markdown("<div style='font-weight:700; margin-bottom:12px; color:#1a73e8;'>누적된 이전 연구 자료 아카이브</div>", unsafe_allow_html=True)
-                                for archive in leftovers[3:]:
-                                    a_title = re.sub(r'\[.*?연구\]', '', archive["title"]).strip()
-                                    st.markdown(f"<div style='margin-bottom: 10px; font-size: 0.9rem; line-height: 1.4;'>🔗 <a href='{clean_url(archive.get('source_url', ''))}' target='_blank' class='archive-link' style='color: #444;'>{a_title}</a></div>", unsafe_allow_html=True)
-
-        # 💡 하위 섹션 카테고리 태그 변경 (국내동향, 기술소식, 해외트렌드)
-        all_policy = [a for a in all_data if a.get('category') == "국내동향"]
-        today_policy = [a for a in target_data if a.get('category') == "국내동향"]
-        main_policy = today_policy.copy()
-        for p in all_policy:
-            if len(main_policy) >= 3: break
-            if p not in main_policy: main_policy.append(p)
-        past_policy = get_unique_items([a for a in all_policy if a not in main_policy], main_policy, threshold=0.60)
-
-        all_smart = [a for a in all_data if a.get('category') == "기술소식"]
-        today_smart = [a for a in target_data if a.get('category') == "기술소식"]
-        main_smart = today_smart.copy()
-        for p in all_smart:
-            if len(main_smart) >= 2: break
-            if p not in main_smart: main_smart.append(p)
-        past_smart = get_unique_items([a for a in all_smart if a not in main_smart], main_smart, threshold=0.60)
-
-        all_global = [a for a in all_data if a.get('category') == "해외트렌드"]
-        today_global = [a for a in target_data if a.get('category') == "해외트렌드"]
-        main_global = today_global.copy()
-        for p in all_global:
-            if len(main_global) >= 2: break
-            if p not in main_global: main_global.append(p)
-        past_global = get_unique_items([a for a in all_global if a not in main_global], main_global, threshold=0.60)
-
-        c1, c2, c3 = st.columns(3)
-        
-        with c1:
-            h_col1, h_col2 = st.columns([7, 3])
-            # 동적 UI 반영
-            h_col1.markdown(f"<div style='font-size: 1.05rem; font-weight: 700; color: #222; margin-top: 8px; margin-bottom: 10px;'>📢 {main_f} 국내 동향</div>", unsafe_allow_html=True)
-            with h_col2:
-                if past_policy:
-                    with st.popover("➕ 더 보기"):
-                        for a in past_policy[:3]: st.markdown(f"<div style='margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4;'>🔗 <a href='{clean_url(a.get('source_url', ''))}' target='_blank' class='archive-link' style='color: #444;'>{a['title']}</a></div>", unsafe_allow_html=True)
-            for a in main_policy:
-                st.markdown(f'<div class="summary-box"><a href="{clean_url(a.get("source_url", ""))}" target="_blank" class="news-link"><div class="news-title">{a["title"]}</div></a><div class="news-summary">{a["summary"]}</div></div>', unsafe_allow_html=True)
-
-        with c2:
-            h_col1, h_col2 = st.columns([7, 3])
-            # 동적 UI 반영
-            h_col1.markdown(f"<div style='font-size: 1.05rem; font-weight: 700; color: #222; margin-top: 8px; margin-bottom: 10px;'>📡 {main_t} 기술 뉴스</div>", unsafe_allow_html=True)
-            with h_col2:
-                if past_smart:
-                    with st.popover("➕ 더 보기"):
-                        for a in past_smart[:3]: st.markdown(f"<div style='margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4;'>🔗 <a href='{clean_url(a.get('source_url', ''))}' target='_blank' class='archive-link' style='color: #444;'>{a['title']}</a></div>", unsafe_allow_html=True)
-            for a in main_smart:
-                st.markdown(f'<div class="summary-box"><a href="{clean_url(a.get("source_url", ""))}" target="_blank" class="news-link"><div class="news-title">{a["title"]}</div></a><div class="news-summary">{a["summary"]}</div></div>', unsafe_allow_html=True)
-
-        with c3:
-            h_col1, h_col2 = st.columns([7, 3])
-            # 동적 UI 반영
-            h_col1.markdown(f"<div style='font-size: 1.05rem; font-weight: 700; color: #222; margin-top: 8px; margin-bottom: 10px;'>🌎 글로벌 {main_f} 트렌드</div>", unsafe_allow_html=True)
-            with h_col2:
-                if past_global:
-                    with st.popover("➕ 더 보기"):
-                        for a in past_global[:3]: st.markdown(f"<div style='margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4;'>🔗 <a href='{clean_url(a.get('source_url', ''))}' target='_blank' class='archive-link' style='color: #444;'>{a['title']}</a></div>", unsafe_allow_html=True)
-            for a in main_global:
-                st.markdown(f'<div class="summary-box"><a href="{clean_url(a.get("source_url", ""))}" target="_blank" class="news-link"><div class="news-title">{a["title"]}</div></a><div class="news-summary">{a["summary"]}</div></div>', unsafe_allow_html=True)
+        render_archived_news(archived_policy, col1, "📢 국내 정책 및 동향", "pol")
+        render_archived_news(archived_tech, col2, "📡 축산 인공지능 소식", "tech")
+        render_archived_news(archived_global, col3, "🌎 글로벌 트렌드", "glob")
